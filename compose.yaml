@@ -1,0 +1,10 @@
+services:
+  masst:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - masst-data:/data
+    restart: unless-stopped
+volumes:
+  masst-data:

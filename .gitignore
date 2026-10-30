@@ -1,0 +1,22 @@
+# Installed dependencies and local job data
+node_modules/
+/var/
+
+# Temporary downloads, databases, caches, and logs
+.cache/
+coverage/
+*.log
+*.tmp
+*.part
+*.upload
+*.sqlite
+*.sqlite-*
+
+# Local configuration and OS metadata
+.env
+.env.*
+!.env.example
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini

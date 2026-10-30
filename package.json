@@ -1,0 +1,19 @@
+{
+  "name": "batchmasst-desk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "csv-parse": "6.1.0",
+    "stream-json": "1.9.1"
+  },
+  "description": "Batch spectral searches across biological domains with a local web interface.",
+  "license": "MIT"
+}

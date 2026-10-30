@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>batchMASST Desk · Batch search</title>
+    <meta
+      name="description"
+      content="Search spectra across GNPS and six domain MASSTs, explore taxonomic trees, and resume disk-backed batch jobs."
+    />
+    <meta name="category" content="Mass spectrometry" />
+    <style>
+      /* House palette. Every color below comes from here — add new tokens rather
+       than inlining hex values, so a future restyle is one block of edits. */
+      :root {
+        --bg: #fafafa;
+        --card: #fff;
+        --ink: #222;
+        --muted: #6c6c70;
+        --line: #e3e6ea;
+        --accent: #2980b9;
+        --accent-bg: #eef3fc;
+        --ok: #0a7c00;
+        --err: #b00020;
+        --warn: #8a5a00;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      .wrap {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 48px 24px;
+      }
+
+      a.back {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 0.9em;
+      }
+      a.back:hover {
+        text-decoration: underline;
+      }
+      h1 {
+        font-size: 1.8em;
+        margin: 12px 0 6px;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 28px;
+        line-height: 1.5;
+      }
+
+      /* --- drop zone ---------------------------------------------------- */
+      #drop {
+        background: var(--card);
+        border: 2px dashed #cdd5e0;
+        border-radius: 14px;
+        padding: 38px 24px;
+        cursor: pointer;
+        text-align: center;
+        transition:
+          background-color 0.15s,
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      #drop:hover {
+        border-color: var(--accent);
+        box-shadow: 0 4px 16px rgba(41, 128, 185, 0.1);
+      }
+      #drop.over {
+        background: var(--accent-bg);
+        border-color: var(--accent);
+        border-style: solid;
+        box-shadow: 0 6px 22px rgba(41, 128, 185, 0.18);
+      }
+      #drop strong {
+        display: block;
+        font-size: 1.05em;
+        margin-bottom: 6px;
+      }
+      #drop .hint {
+        color: var(--muted);
+        font-size: 0.88em;
+      }
+      #drop .hint a {
+        color: var(--accent);
+      }
+
+      /* --- status banner ------------------------------------------------ */
+      #status {
+        display: none;
+        margin: 18px 0 0;
+        padding: 11px 14px;
+        border-radius: 8px;
+        font-size: 0.9em;
+      }
+      #status.shown {
+        display: block;
+      }
+      #status.info {
+        background: var(--accent-bg);
+        color: #1a5276;
+      }
+      #status.ok {
+        background: #eaf7ef;
+        color: var(--ok);
+      }
+      #status.warn {
+        background: #fff5e1;
+        color: var(--warn);
+      }
+      #status.err {
+        background: #fdecea;
+        color: var(--err);
+      }
+
+      /* --- results ------------------------------------------------------ */
+      #results {
+        display: none;
+        margin-top: 28px;
+      }
+      #results.shown {
+        display: block;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 20px 22px;
+        margin-bottom: 18px;
+      }
+      .card h2 {
+        margin: 0 0 14px;
+        font-size: 0.78em;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+
+      .stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 28px;
+      }
+      .stat .lbl {
+        font-size: 0.7em;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin-bottom: 3px;
+      }
+      .stat .val {
+        font-size: 1.4em;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .axis {
+        stroke: var(--line);
+        stroke-width: 1;
+      }
+      .tick {
+        fill: var(--muted);
+        font-size: 10px;
+      }
+      .stick {
+        stroke: var(--accent);
+        stroke-width: 1.5;
+      }
+      .stick.base {
+        stroke: var(--err);
+        stroke-width: 2;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9em;
+      }
+      th {
+        text-align: left;
+        font-size: 0.7em;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        font-weight: 600;
+        padding: 0 10px 8px 0;
+        border-bottom: 1px solid var(--line);
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+      }
+      th:hover {
+        color: var(--accent);
+      }
+      th .arrow {
+        opacity: 0.45;
+      }
+      td {
+        padding: 7px 10px 7px 0;
+        border-bottom: 1px solid #f2f4f6;
+        font-variant-numeric: tabular-nums;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      td.num {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .bar {
+        height: 8px;
+        border-radius: 4px;
+        background: var(--accent);
+        min-width: 2px;
+      }
+
+      button {
+        font: inherit;
+        font-size: 0.9em;
+        padding: 8px 16px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+      button:hover {
+        filter: brightness(1.08);
+      }
+      button.secondary {
+        background: #eef1f4;
+        color: #444;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .foot {
+        color: var(--muted);
+        font-size: 0.82em;
+        margin-top: 22px;
+        line-height: 1.5;
+      }
+    </style>
+    <style>
+      .wrap {
+        max-width: 1100px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 16px;
+      }
+      label {
+        display: block;
+        font-size: 0.85em;
+        color: var(--muted);
+      }
+      input:not([type="checkbox"]),
+      select,
+      textarea {
+        box-sizing: border-box;
+        display: block;
+        width: 100%;
+        font: inherit;
+        color: var(--ink);
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: var(--card);
+        margin: 6px 0;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 100px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      input[type="checkbox"] {
+        accent-color: var(--accent);
+      }
+      label.check {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--ink);
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.85em;
+      }
+      .scroll {
+        overflow: auto;
+        max-height: 450px;
+      }
+      td {
+        max-width: 400px;
+        overflow-wrap: anywhere;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      progress {
+        width: 100%;
+        height: 13px;
+        accent-color: var(--accent);
+        margin: 16px 0;
+      }
+      .pill {
+        padding: 4px 9px;
+        border-radius: 4px;
+        background: var(--accent-bg);
+        font-size: 0.8em;
+        color: var(--accent);
+      }
+      .job {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .job span:first-child {
+        flex: 1;
+        min-width: 180px;
+      }
+      .error {
+        color: var(--err);
+      }
+      #tree-frame {
+        width: 100%;
+        height: 650px;
+        border: 1px solid var(--line);
+      }
+      #drop {
+        padding: 22px;
+        margin: 15px 0;
+      }
+      summary {
+        cursor: pointer;
+      }
+      details > summary {
+        color: var(--accent);
+        margin-bottom: 12px;
+      }
+      h1 {
+        margin-top: 18px;
+      }
+      .card {
+        margin-top: 20px;
+      }
+      .foot a {
+        color: var(--accent);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .heading {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .heading h2 {
+        margin: 0;
+      }
+      #job-name {
+        overflow-wrap: anywhere;
+      }
+      #status {
+        white-space: pre-wrap;
+      }
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>batchMASST Desk</h1>
+      <p class="sub">
+        Batch spectral searches across biological domains. Search one spectrum
+        or a whole batch across GNPS, then explore its
+        microbial, plant, food, tissue, personal care, and microbiome matches.
+        Node.js saves results to disk as they arrive; you can close this page
+        and resume interrupted jobs.
+      </p>
+      <div id="status" role="status" aria-live="polite"></div>
+      <section class="card">
+        <h2>1 · Input spectra</h2>
+        <div class="grid">
+          <label
+            >Workflow<select id="mode">
+              <option value="search">Search FASST</option>
+              <option value="draw">Build trees from matches TSV</option>
+            </select></label
+          ><label
+            >Job name<input
+              id="job-label"
+              placeholder="Optional descriptive name"
+          /></label>
+        </div>
+        <div
+          id="drop"
+          role="button"
+          tabindex="0"
+          aria-label="Choose MGF, CSV, TSV or text file"
+        >
+          <strong id="file-label"
+            >Drop an MGF, USI CSV/TSV, or text list here</strong
+          >
+          <div class="hint">
+            or click to choose · <a href="#" id="example">try an example</a>
+          </div>
+        </div>
+        <input
+          type="file"
+          id="file-input"
+          accept=".mgf,.csv,.tsv,.txt"
+          hidden
+        />
+        <label
+          >Or paste USIs / GNPS library accessions, one per line<textarea
+            id="input-text"
+            placeholder="CCMSLIB00000001556"
+          ></textarea>
+        </label>
+        <div class="row">
+          <button class="secondary" id="clear-file">Use pasted input</button
+          ><span class="muted"
+            >Matches import expects USI, Cosine, Matching Peaks and Delta Mass
+            columns.</span
+          >
+        </div>
+        <details>
+          <summary>Table columns and delimiter</summary>
+          <div class="grid">
+            <label>USI column<input id="usiColumn" value="USI" /></label
+            ><label
+              >Name / feature ID column<input
+                id="nameColumn"
+                value="Compound" /></label
+            ><label
+              >Delimiter<select id="delimiter">
+                <option value="auto">From extension</option>
+                <option value=",">Comma</option>
+                <option value="tab">Tab</option>
+                <option value=";">Semicolon</option>
+              </select></label
+            >
+          </div>
+        </details>
+      </section>
+      <section class="card">
+        <h2>2 · Search parameters</h2>
+        <div class="grid">
+          <label
+            >Public data index<input
+              id="database"
+              value="metabolomicspanrepo_index_nightly"
+              list="databases" /></label
+          ><label
+            >Reference library<input
+              id="library"
+              value="gnpslibrary"
+              list="databases"
+          /></label>
+        </div>
+        <datalist id="databases">
+          <option value="metabolomicspanrepo_index_nightly"></option>
+          <option value="gnpsdata_index"></option>
+          <option value="gnpsdata_index_11_25_23"></option>
+          <option value="gnpslibrary"></option>
+          <option value="massivedata_index"></option>
+          <option value="massivekb_index"></option>
+        </datalist>
+        <div class="grid">
+          <label
+            >Precursor tolerance (Da)<input
+              type="number"
+              id="precursorTolerance"
+              min="0.000001"
+              step="0.01"
+              value="0.05" /></label
+          ><label
+            >Fragment tolerance (Da)<input
+              type="number"
+              id="fragmentTolerance"
+              min="0.000001"
+              step="0.01"
+              value="0.02" /></label
+          ><label
+            >Minimum cosine<input
+              type="number"
+              id="cosine"
+              min="0"
+              max="1"
+              step="0.05"
+              value="0.7" /></label
+          ><label
+            >Minimum matched peaks<input
+              type="number"
+              id="minPeaks"
+              min="1"
+              step="1"
+              value="3"
+          /></label>
+        </div>
+        <div class="row">
+          <label class="check"
+            ><input type="checkbox" id="analog" />Analog search</label
+          ><span class="muted">Library search always uses exact matching.</span>
+        </div>
+        <div class="grid">
+          <label
+            >Analog window below (Da)<input
+              type="number"
+              id="below"
+              min="0"
+              value="150" /></label
+          ><label
+            >Analog window above (Da)<input
+              type="number"
+              id="above"
+              min="0"
+              value="200" /></label
+          ><label
+            >Number of workers<input
+              type="number"
+              id="concurrency"
+              min="1"
+              max="10"
+              step="1"
+              value="3"
+              aria-describedby="workers-help workers-warning"
+          /></label>
+        </div>
+        <p id="workers-help" class="muted">
+          Workers process spectra in parallel. Default: 3 (range: 1–10).
+        </p>
+        <p id="workers-warning" role="status" style="color: var(--warn)" hidden>
+          More than 3 workers increases load on the shared FASST server. Please
+          respect server capacity: keep 3 workers unless you need more, and reduce
+          the number if requests slow down or fail.
+        </p>
+        <p class="muted">
+          Matches retain the best cosine / matched-peak score per sample file.
+          Analog outputs also retain the best match per file and rounded mass
+          shift, following the source branch.
+        </p>
+      </section>
+      <section class="card">
+        <h2>3 · Domain outputs</h2>
+        <div class="row" id="domains"></div>
+        <div class="row" style="margin-top: 16px">
+          <label class="check"
+            ><input type="checkbox" id="exportHtml" checked />Interactive HTML
+            trees</label
+          ><label class="check"
+            ><input type="checkbox" id="exportJson" checked />Tree JSON</label
+          >
+        </div>
+        <p class="muted">
+          Counts TSVs are always exported for selected domains. Select none for
+          matches, library annotations, and dataset summaries only. Multiple
+          domains also produce a combined tree.
+        </p>
+        <button id="submit">Create and start job</button>
+        <p class="muted">
+          Input is uploaded to your Node service; spectra are sent to FASST.
+          Tree references download from the original repository. This app
+          requires an internet connection for new searches and uncached
+          references.
+        </p>
+      </section>
+      <section class="card">
+        <div class="heading">
+          <h2>Saved jobs</h2>
+          <button class="secondary" id="refresh">Refresh</button>
+        </div>
+        <div id="jobs">
+          <p class="muted">Connecting to the local service…</p>
+        </div>
+      </section>
+      <section class="card" id="job-detail" hidden>
+        <div class="heading">
+          <h2 id="job-name"></h2>
+          <span id="job-state" class="pill"></span>
+        </div>
+        <progress id="progress" max="1" value="0"></progress>
+        <p id="progress-text"></p>
+        <p id="job-error" class="error"></p>
+        <p id="job-eta" role="status" hidden></p>
+        <details open style="margin-bottom: 16px">
+          <summary>Job parameters</summary>
+          <table><tbody id="job-parameters"></tbody></table>
+        </details>
+        <details id="skip-report" hidden>
+          <summary>Skipped input: scans and reasons</summary>
+          <div style="max-height: 320px; overflow: auto">
+            <table>
+              <thead><tr><th>Scan / line</th><th>Reason</th></tr></thead>
+              <tbody id="skip-rows"></tbody>
+            </table>
+          </div>
+        </details>
+        <div class="row">
+          <button id="resume">Resume / retry failures</button
+          ><button class="secondary" id="pause">Pause</button
+          ><a id="archive">Download all completed outputs (.tar)</a>
+        </div>
+        <p class="muted">
+          Completed spectra are skipped on resume. Pending task IDs and
+          downloaded responses are reused. Pause stops polling; submitted
+          upstream searches may continue.
+        </p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Spectrum</th>
+                <th>Status</th>
+                <th>Matches</th>
+                <th>Outputs / error</th>
+              </tr>
+            </thead>
+            <tbody id="queries"></tbody>
+          </table>
+        </div>
+        <div class="row">
+          <button class="secondary" id="previous">Previous</button
+          ><span id="page"></span
+          ><button class="secondary" id="next">Next</button>
+        </div>
+        <details style="margin-top: 20px">
+          <summary>Metadata and sample quantification summaries</summary>
+          <p class="muted">
+            Aggregate matched tree nodes across completed spectra. Optional
+            MZmine quantification CSV: row ID matches spectrum scan / name, and
+            sample columns end in “ Peak area”. Values normalize to each
+            feature’s maximum (0–100); binary presence uses ≥0.01.
+          </p>
+          <div class="grid">
+            <label
+              >Minimum matches per node<input
+                type="number"
+                id="summary-min"
+                value="1"
+                min="1" /></label
+            ><label
+              >Node values<select id="summary-binary">
+                <option value="yes">Binary presence</option>
+                <option value="no">Match counts</option>
+              </select></label
+            ><label
+              >Optional quantification CSV<input
+                type="file"
+                id="quant"
+                accept=".csv"
+            /></label>
+          </div>
+          <button class="secondary" id="summarize">Generate summaries</button>
+          <div id="summary-files"></div>
+        </details>
+      </section>
+      <section class="card" id="outputs" hidden>
+        <h2 id="output-title">Spectrum outputs</h2>
+        <div id="file-links" class="row"></div>
+        <p class="muted">
+          Table previews show at most 200 rows. Download files for complete
+          results.
+        </p>
+        <div class="scroll" id="table-preview"></div>
+        <iframe id="tree-frame" title="Interactive domain tree" hidden></iframe>
+      </section>
+      <p class="foot">
+        Based on
+        <a href="https://github.com/wilhan-nunes/microbe_masst/tree/fasst_api"
+          >microbe_masst · fasst_api</a
+        >. Please cite
+        <a href="https://doi.org/10.1038/s41564-023-01575-9"
+          >microbeMASST (Nature Microbiology)</a
+        >. Counts can overlap across ontology branches and domains.<br /><span
+          id="storage"
+        ></span>
+      </p>
+    </div>
+    <script>
+      (function () {
+        "use strict";
+        var $ = function (id) {
+            return document.getElementById(id);
+          },
+          file = null,
+          current = null,
+          offset = 0,
+          busy = false;
+        var domains = [
+          "microbe",
+          "plant",
+          "food",
+          "tissue",
+          "personalCareProduct",
+          "microbiome",
+        ];
+        function element(tag, text) {
+          var e = document.createElement(tag);
+          if (text !== undefined) e.textContent = text;
+          return e;
+        }
+        function status(text, tone) {
+          $("status").textContent = text;
+          $("status").className = "shown " + (tone || "info");
+        }
+        function fail(error) {
+          status(error.message || String(error), "err");
+        }
+        function api(url, options) {
+          return fetch(url, options).then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.error || r.statusText);
+              return data;
+            });
+          });
+        }
+        function post(url, data) {
+          return api(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data || {}),
+          });
+        }
+        function selectFile(f) {
+          if (!f) return;
+          file = f;
+          $("file-label").textContent =
+            f.name + " · " + (f.size / 1024).toFixed(1) + " KB";
+          status("File selected. Review settings, then start the job.", "ok");
+        }
+        domains.forEach(function (d) {
+          var label = element(
+              "label",
+              d === "personalCareProduct"
+                ? "Personal care"
+                : d.charAt(0).toUpperCase() + d.slice(1),
+            ),
+            c = element("input");
+          label.className = "check";
+          c.type = "checkbox";
+          c.checked = true;
+          c.value = d;
+          label.prepend(c);
+          $("domains").appendChild(label);
+        });
+        $("drop").onclick = function () {
+          $("file-input").click();
+        };
+        $("drop").onkeydown = function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            $("file-input").click();
+          }
+        };
+        ["dragenter", "dragover"].forEach(function (evt) {
+          $("drop").addEventListener(evt, function (e) {
+            e.preventDefault();
+            $("drop").classList.add("over");
+          });
+        });
+        ["dragleave", "drop"].forEach(function (evt) {
+          $("drop").addEventListener(evt, function (e) {
+            e.preventDefault();
+            if (evt === "dragleave" && $("drop").contains(e.relatedTarget))
+              return;
+            $("drop").classList.remove("over");
+            if (evt === "drop") selectFile(e.dataTransfer.files[0]);
+          });
+        });
+        $("file-input").onchange = function (e) {
+          selectFile(e.target.files[0]);
+          e.target.value = "";
+        };
+        $("clear-file").onclick = function () {
+          file = null;
+          $("file-label").textContent =
+            "Drop an MGF, USI CSV/TSV, or text list here";
+          $("input-text").focus();
+        };
+        $("example").onclick = function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          file = null;
+          $("file-label").textContent = "Example loaded below";
+          $("mode").value = "search";
+          $("input-text").value = "CCMSLIB00000001556";
+          status("Example loaded. Start to run a real FASST search.", "ok");
+        };
+        function updateWorkersWarning() {
+          $("workers-warning").hidden = Number($("concurrency").value) <= 3;
+        }
+        $("concurrency").addEventListener("input", updateWorkersWarning);
+        $("concurrency").addEventListener("change", updateWorkersWarning);
+        updateWorkersWarning();
+        function options() {
+          var o = { domains: [], mode: $("mode").value };
+          ["database", "library", "usiColumn", "nameColumn"].forEach(
+            function (k) {
+              o[k] = $(k).value;
+            },
+          );
+          [
+            "precursorTolerance",
+            "fragmentTolerance",
+            "cosine",
+            "minPeaks",
+            "below",
+            "above",
+            "concurrency",
+          ].forEach(function (k) {
+            o[k] = Number($(k).value);
+          });
+          ["analog", "exportHtml", "exportJson"].forEach(function (k) {
+            o[k] = $(k).checked;
+          });
+          $("domains")
+            .querySelectorAll("input:checked")
+            .forEach(function (c) {
+              o.domains.push(c.value);
+            });
+          o.delimiter =
+            $("delimiter").value === "tab" ? "\t" : $("delimiter").value;
+          return o;
+        }
+        $("submit").onclick = function () {
+          if (busy) return;
+          var input =
+            file || new Blob([$("input-text").value], { type: "text/plain" });
+          if (!input.size) {
+            status("Choose a file or paste at least one USI.", "err");
+            return;
+          }
+          var name = file
+            ? file.name
+            : $("mode").value === "draw"
+              ? "matches.tsv"
+              : "input.txt";
+          busy = true;
+          $("submit").disabled = true;
+          status("Uploading and validating input…");
+          api(
+            "/api/jobs?name=" +
+              encodeURIComponent(name) +
+              "&label=" +
+              encodeURIComponent($("job-label").value),
+            {
+              method: "POST",
+              headers: {
+                "X-Masst-Options": encodeURIComponent(
+                  JSON.stringify(options()),
+                ),
+              },
+              body: input,
+            },
+          )
+            .then(function (j) {
+              current = j.id;
+              offset = 0;
+              return post("/api/jobs/" + j.id + "/resume");
+            })
+            .then(function () {
+              status(
+                "Job started. Results are saved on the Node server as each spectrum completes.",
+                "ok",
+              );
+              return refresh();
+            })
+            .catch(fail)
+            .finally(function () {
+              busy = false;
+              $("submit").disabled = false;
+            });
+        };
+        function openJob(id) {
+          current = id;
+          offset = 0;
+          $("outputs").hidden = true;
+          $("summary-files").replaceChildren();
+          return detail();
+        }
+        function refresh() {
+          return api("/api/jobs").then(function (jobs) {
+            $("jobs").replaceChildren();
+            if (!jobs.length)
+              $("jobs").appendChild(
+                element(
+                  "p",
+                  "No saved jobs yet. Start with an MGF or a list of USIs.",
+                ),
+              );
+            jobs.forEach(function (j) {
+              var row = element("div"),
+                name = element(
+                  "span",
+                  j.name + " · " + new Date(j.created).toLocaleString(),
+                ),
+                badge = element(
+                  "span",
+                  j.status + " · " + j.succeeded + "/" + j.total,
+                ),
+                b = element("button", "Open");
+              row.className = "job";
+              badge.className = "pill";
+              b.className = "secondary";
+              b.onclick = function () {
+                openJob(j.id).catch(fail);
+              };
+              row.append(name, badge, b);
+              $("jobs").appendChild(row);
+            });
+            return current ? detail() : null;
+          });
+        }
+        function detail() {
+          var id = current;
+          return api("/api/jobs/" + id + "?offset=" + offset).then(
+            function (j) {
+              if (current !== id) return;
+              $("job-detail").hidden = false;
+              $("job-name").textContent = j.name;
+              $("job-state").textContent = j.status;
+              $("progress").max = j.total;
+              $("progress").value = j.succeeded;
+              $("progress-text").textContent =
+                j.succeeded +
+                " / " +
+                j.total +
+                " complete · " +
+                j.failed +
+                " failed · " +
+                j.pending +
+                " remaining · " +
+                j.skipped +
+                " input lines / spectra skipped";
+              $("job-error").textContent = j.error || "";
+              const p = j.options;
+              const parameters = [
+                ["Input file", j.inputName],
+                ["Mode", p.mode === "draw" ? "Build trees from matches TSV" : "Search"],
+                ["Public data index", p.database],
+                ["Reference library", p.library],
+                ["Precursor tolerance", p.precursorTolerance + " Da"],
+                ["Fragment tolerance", p.fragmentTolerance + " Da"],
+                ["Minimum cosine", p.cosine],
+                ["Minimum matched / retained peaks", p.minPeaks],
+                ["Analog search", p.analog ? "Enabled (public data only)" : "Disabled"],
+                ["Analog window", p.analog ? "−" + p.below + " / +" + p.above + " Da" : "Not used"],
+                ["Number of workers", p.concurrency],
+                ["Domains", p.domains.join(", ") || "None"],
+                ["Exports", ["TSV", p.exportHtml && "HTML trees", p.exportJson && "Tree JSON"].filter(Boolean).join(", ")],
+                ["USI column", p.usiColumn],
+                ["Name column", p.nameColumn || "Automatic"],
+                ["Input delimiter", p.delimiter === "\t" ? "Tab" : p.delimiter === "auto" ? "Automatic" : p.delimiter],
+              ];
+              $("job-parameters").replaceChildren();
+              for (const [label, value] of parameters) {
+                const row = element("tr");
+                row.append(element("td", label), element("td", String(value)));
+                $("job-parameters").append(row);
+              }
+              $("job-eta").hidden = j.status !== "running";
+              const seconds = j.estimatedRemainingSeconds;
+              if (seconds == null) {
+                $("job-eta").textContent = "Estimated completion: calculating — waiting for spectra to finish.";
+              } else {
+                const minutes = Math.ceil(seconds / 60);
+                const remaining = minutes < 1 ? "less than a minute" : minutes < 60
+                  ? minutes + " min" : Math.floor(minutes / 60) + " h " + (minutes % 60) + " min";
+                const finish = new Date(Date.now() + seconds * 1000);
+                $("job-eta").textContent = "Estimated completion: about " + remaining +
+                  " remaining (" + finish.toLocaleString() +
+                  "). Based on processing speed this run; server load and spectrum size can change this estimate.";
+              }
+              const skippedDetails = j.skippedDetails || [];
+              $("skip-report").hidden = !skippedDetails.length;
+              $("skip-rows").replaceChildren();
+              for (const item of skippedDetails) {
+                const row = document.createElement("tr");
+                const label = document.createElement("td");
+                const reason = document.createElement("td");
+                label.textContent = item.kind === "spectrum"
+                  ? "Spectrum " + item.index + " (" + item.name + "), line " + item.line
+                  : "Line " + item.line + (item.name ? " (" + item.name + ")" : "");
+                reason.textContent = item.reason;
+                row.append(label, reason);
+                $("skip-rows").append(row);
+              }
+              if (j.stage) $("progress-text").textContent += " · " + j.stage;
+              $("pause").disabled = !["running", "pausing"].includes(j.status);
+              $("resume").disabled = [
+                "running",
+                "pausing",
+                "complete",
+              ].includes(j.status);
+              $("summarize").disabled = ["running", "pausing"].includes(
+                j.status,
+              );
+              $("archive").href = "/api/jobs/" + id + "/archive";
+              $("queries").replaceChildren();
+              j.queries.forEach(function (q) {
+                var tr = element("tr"),
+                  action = element("td");
+                tr.append(
+                  element("td", q.name),
+                  element("td", q.status),
+                  element("td", q.counts ? q.counts.matches : "—"),
+                );
+                if (q.status === "complete") {
+                  var b = element("button", "View outputs");
+                  b.className = "secondary";
+                  b.onclick = function () {
+                    showFiles(id, q).catch(fail);
+                  };
+                  action.appendChild(b);
+                } else action.textContent = q.error || q.stage || "";
+                tr.appendChild(action);
+                $("queries").appendChild(tr);
+              });
+              $("page").textContent =
+                offset +
+                1 +
+                "–" +
+                Math.min(offset + 200, j.total) +
+                " of " +
+                j.total;
+              $("previous").disabled = offset === 0;
+              $("next").disabled = offset + 200 >= j.total;
+            },
+          );
+        }
+        $("previous").onclick = function () {
+          offset = Math.max(0, offset - 200);
+          detail().catch(fail);
+        };
+        $("next").onclick = function () {
+          offset += 200;
+          detail().catch(fail);
+        };
+        $("refresh").onclick = function () {
+          refresh().catch(fail);
+        };
+        ["resume", "pause"].forEach(function (action) {
+          $(action).onclick = function () {
+            if (!current) return;
+            post("/api/jobs/" + current + "/" + action)
+              .then(refresh)
+              .catch(fail);
+          };
+        });
+        function showFiles(id, q) {
+          var base = "/api/jobs/" + id + "/queries/" + q.id + "/files";
+          return api(base).then(function (files) {
+            $("outputs").hidden = false;
+            $("output-title").textContent = q.name + " · outputs";
+            $("file-links").replaceChildren();
+            $("tree-frame").hidden = true;
+            $("table-preview").replaceChildren();
+            files.forEach(function (f) {
+              var box = element("span"),
+                a = element("a", f.replace("result_", ""));
+              a.href = base + "/" + f + "?download=1";
+              box.appendChild(a);
+              if (/\.(html|tsv)$/.test(f)) {
+                var b = element("button", "View");
+                b.className = "secondary";
+                b.style.margin = "4px";
+                b.onclick = function () {
+                  if (f.endsWith(".html")) {
+                    $("tree-frame").src = base + "/" + f;
+                    $("tree-frame").hidden = false;
+                    $("table-preview").replaceChildren();
+                  } else {
+                    api(base + "/" + f + "?preview=1")
+                      .then(function (rows) {
+                        $("tree-frame").hidden = true;
+                        table(rows);
+                      })
+                      .catch(fail);
+                  }
+                };
+                box.appendChild(b);
+              }
+              $("file-links").appendChild(box);
+            });
+            $("outputs").scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        }
+        function table(rows) {
+          $("table-preview").replaceChildren();
+          if (!rows.length) {
+            $("table-preview").appendChild(
+              element(
+                "p",
+                "No matches. The downloadable table contains a header only.",
+              ),
+            );
+            return;
+          }
+          var t = element("table"),
+            head = element("tr"),
+            cols = Object.keys(rows[0]);
+          cols.forEach(function (k) {
+            head.appendChild(element("th", k));
+          });
+          var thead = element("thead");
+          thead.appendChild(head);
+          t.appendChild(thead);
+          var body = element("tbody");
+          rows.forEach(function (r) {
+            var tr = element("tr");
+            cols.forEach(function (k) {
+              var value = r[k];
+              if (["Cosine", "Delta Mass"].includes(k) && value !== "")
+                value = Number(value).toFixed(4);
+              tr.appendChild(element("td", value));
+            });
+            body.appendChild(tr);
+          });
+          t.appendChild(body);
+          $("table-preview").appendChild(t);
+        }
+        $("summarize").onclick = function () {
+          if (!current) return;
+          var id = current,
+            quant = $("quant").files[0];
+          $("summarize").disabled = true;
+          status("Generating metadata summaries…");
+          var upload = quant
+            ? api("/api/jobs/" + id + "/quant", { method: "PUT", body: quant })
+            : Promise.resolve();
+          upload
+            .then(function () {
+              return post("/api/jobs/" + id + "/summary", {
+                minimum: Number($("summary-min").value),
+                binary: $("summary-binary").value === "yes",
+                useQuant: !!quant,
+              });
+            })
+            .then(function (r) {
+              $("summary-files").replaceChildren();
+              r.files.forEach(function (f) {
+                var p = element("p"),
+                  a = element("a", f);
+                a.href = "/api/jobs/" + id + "/summary/" + f;
+                p.appendChild(a);
+                $("summary-files").appendChild(p);
+              });
+              status(
+                r.warnings.length ? r.warnings.join("\n") : "Summaries ready.",
+                r.warnings.length ? "warn" : "ok",
+              );
+            })
+            .catch(fail)
+            .finally(function () {
+              $("summarize").disabled = false;
+            });
+        };
+        api("/api/config")
+          .then(function (c) {
+            $("storage").textContent = "Results folder: " + c.dataDir;
+            return refresh();
+          })
+          .catch(function (e) {
+            status(
+              "Cannot connect to the Node service. Start it with npm start and open its localhost URL. " +
+                e.message,
+              "err",
+            );
+          });
+        setInterval(function () {
+          if (!busy) refresh().catch(fail);
+        }, 3000);
+      })();
+    </script>
+  </body>
+</html>
