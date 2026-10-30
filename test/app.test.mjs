@@ -26,6 +26,7 @@ async function fixture(t) {
   let next = 0;
   const submitted = [],
     tasks = new Map();
+  let pollStatus = 0, submissionStatus = 0;
   let pending = false,
     failDownload = false,
     terminal = false,
@@ -35,6 +36,11 @@ async function fixture(t) {
     children: [{ name: "Taxon", NCBI: "2", group_size: 2 }],
   };
   const upstream = http.createServer(async (req, res) => {
+    if (req.url === "/search" && submissionStatus) {
+      res.writeHead(submissionStatus);
+      res.end();
+      return;
+    }
     if (req.url === "/search") {
       let text = "";
       for await (const c of req) text += c;
@@ -46,6 +52,11 @@ async function fixture(t) {
       return;
     }
     if (req.url.startsWith("/search/result/")) {
+      if (pollStatus) {
+        res.writeHead(pollStatus);
+        res.end();
+        return;
+      }
       if (pending) {
         res.end(JSON.stringify({ status: "PENDING" }));
         return;
@@ -130,6 +141,8 @@ async function fixture(t) {
     submitted,
     tasks,
     url,
+    setPollStatus: (v) => (pollStatus = v),
+    setSubmissionStatus: (v) => (submissionStatus = v),
     setPending: (v) => (pending = v),
     setBroken: (v) => (failDownload = v),
     setTerminal: (v) => (terminal = v),
@@ -501,4 +514,50 @@ test("counts-only exports and report script escaping", async (t) => {
   assert.equal((html.match(/<script>/g) || []).length, 1);
   const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
   new Function(script);
+});
+
+test("FASST banner reports retries, clears on recovery, and does not resubmit tasks", async (t) => {
+  const f = await fixture(t);
+  f.jobs.pollMs = 100;
+  f.jobs.pollLimit = 20;
+  f.setPollStatus(503);
+  const j = await f.create({ domains: [] });
+  await f.jobs.start(j.id);
+  const active = f.jobs.active.get(j.id).promise;
+  t.after(() => f.jobs.close());
+  for (let i = 0; i < 100 && !f.jobs.summary(f.jobs.get(j.id)).fasstWarning; i++) await delay(10);
+  const warning = f.jobs.summary(f.jobs.get(j.id)).fasstWarning;
+  assert.deepEqual(warning, { retrying: true, affected: 1, rateLimited: false });
+  f.setPollStatus(0);
+  await active;
+  assert.equal(f.jobs.get(j.id).status, "complete");
+  assert.equal(f.jobs.summary(f.jobs.get(j.id)).fasstWarning, null);
+  assert.equal(f.submitted.length, 2);
+});
+
+test("FASST banner distinguishes rate limits, exhausted retries, pause and submission errors", async (t) => {
+  const f = await fixture(t);
+  f.setPollStatus(429);
+  const j = await f.create({ domains: [] });
+  const failed = await f.run(j.id);
+  assert.deepEqual(f.jobs.summary(failed).fasstWarning,
+    { retrying: false, affected: 1, rateLimited: true });
+  const restored = new Jobs(path.join(f.root, "jobs"), f.config);
+  await restored.init();
+  assert.deepEqual(restored.summary(restored.get(j.id)).fasstWarning, f.jobs.summary(failed).fasstWarning);
+  failed.status = "paused";
+  failed.queries[0].status = "running";
+  failed.queries[0].fasstIssue.retrying = true;
+  assert.equal(f.jobs.summary(failed).fasstWarning.retrying, false);
+  f.setPollStatus(0);
+  await f.run(j.id);
+  assert.equal(f.jobs.summary(failed).fasstWarning, null);
+  f.setSubmissionStatus(503);
+  const submission = await f.create({ domains: [] });
+  const submissionFailed = await f.run(submission.id);
+  assert.deepEqual(f.jobs.summary(submissionFailed).fasstWarning,
+    { retrying: false, affected: 1, rateLimited: false });
+  f.setSubmissionStatus(400);
+  await f.run(submission.id);
+  assert.equal(f.jobs.summary(submissionFailed).fasstWarning, null);
 });

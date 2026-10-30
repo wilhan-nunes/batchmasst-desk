@@ -610,6 +610,8 @@
         <progress id="progress" max="1" value="0"></progress>
         <p id="progress-text"></p>
         <p id="job-error" class="error"></p>
+        <p id="fasst-warning" role="status" aria-live="polite"
+          style="padding: 12px; border-radius: 8px; background: #fff5e1; color: var(--warn)" hidden></p>
         <p id="job-eta" role="status" hidden></p>
         <details open style="margin-bottom: 16px">
           <summary>Job parameters</summary>
@@ -962,6 +964,18 @@
                 j.skipped +
                 " input lines / spectra skipped";
               $("job-error").textContent = j.error || "";
+              const serviceWarning = j.fasstWarning;
+              $("fasst-warning").hidden = !serviceWarning;
+              if (serviceWarning) {
+                const service = serviceWarning.rateLimited
+                  ? "FASST is limiting requests" : "FASST unreachable or unavailable";
+                $("fasst-warning").textContent = service +
+                  (serviceWarning.retrying
+                    ? " — retrying result requests automatically."
+                    : " — some requests could not complete. Use Resume / retry failures after the service or connection recovers.") +
+                  " Affected spectra: " + serviceWarning.affected +
+                  ". Completed results are saved. Check your connection; this may also be a temporary service issue.";
+              }
               const p = j.options;
               const parameters = [
                 ["Input file", j.inputName],

@@ -61,6 +61,12 @@ domain needs GitHub. Downloaded HTML tree reports work offline.
 5. After interruption, start the same service/data folder, open the saved job,
    and choose **Resume / retry failures**. Completed spectra are skipped.
 
+The job panel displays a warning when FASST requests encounter connection errors,
+server errors, or rate limits. It indicates automatic result-request retries and
+clears each spectrum's warning when its request recovers. After retries stop or a
+submission fails, it offers resume guidance. This reflects observed requests, not
+a separate service health check; a local connection issue can trigger it too.
+
 CSV/TSV defaults: `USI` and optional `Compound` columns, configurable in the UI.
 Quoted cells and BOMs are supported. Blank/comment lines are skipped. Malformed
 identifiers fail validation visibly. MGF supports PEPMASS, CHARGE, SCANS, TITLE,
