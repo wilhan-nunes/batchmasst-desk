@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import { Jobs } from "../lib/jobs.mjs";
+import { resolveReferenceVersion, referenceCacheKey } from "../lib/references.mjs";
+import { DEFAULT_TREE_BASE } from "../lib/trees.mjs";
 import { settings } from "../lib/input.mjs";
 import { simpleUSI, roundEven } from "../lib/io.mjs";
 import { makeApp } from "../server.mjs";
@@ -560,4 +562,86 @@ test("FASST banner distinguishes rate limits, exhausted retries, pause and submi
   f.setSubmissionStatus(400);
   await f.run(submission.id);
   assert.equal(f.jobs.summary(submissionFailed).fasstWarning, null);
+});
+
+
+test("reference resolver pins the data commit, respects pinned URLs and rejects failed checks", async () => {
+  const sha = "a".repeat(40);
+  const version = await resolveReferenceVersion(DEFAULT_TREE_BASE, undefined, async (url) => {
+    assert.equal(url.hostname, "api.github.com");
+    assert.equal(url.searchParams.get("sha"), "master");
+    assert.equal(url.searchParams.get("path"), "data");
+    assert.equal(url.searchParams.get("per_page"), "1");
+    return Response.json([{ sha }]);
+  });
+  assert.equal(version.commit, sha);
+  assert.equal(version.base, DEFAULT_TREE_BASE.replace("master", sha));
+  const noFetch = () => { throw new Error("Must not fetch"); };
+  assert.deepEqual(await resolveReferenceVersion(version.base, undefined, noFetch), version);
+  assert.equal(await resolveReferenceVersion("https://example.com/data/", undefined, noFetch), null);
+  await assert.rejects(resolveReferenceVersion(DEFAULT_TREE_BASE, undefined,
+    async () => new Response("", { status: 403 })), /reference data version.*GitHub HTTP 403/);
+  await assert.rejects(resolveReferenceVersion(DEFAULT_TREE_BASE, undefined,
+    async () => Response.json([])), /No valid data commit/);
+});
+
+test("jobs share versioned references and indexes, fetch new versions/domains, and preserve pins on resume", async (t) => {
+  const f = await fixture(t);
+  let sha = "a".repeat(40), checks = 0;
+  const downloads = [];
+  const originalFetch = globalThis.fetch;
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const target = new URL(url);
+    if (target.hostname === "api.github.com") {
+      checks++;
+      return Response.json([{ sha }]);
+    }
+    if (target.hostname === "raw.githubusercontent.com") {
+      downloads.push(target.pathname);
+      return originalFetch(new URL(target.pathname.slice(1), f.url), options);
+    }
+    return originalFetch(url, options);
+  });
+  f.jobs.treeBase = DEFAULT_TREE_BASE;
+  const first = await f.create();
+  const initial = await f.run(first.id);
+  assert.equal(initial.status, "complete", initial.error);
+  assert.equal(initial.referenceVersion, sha);
+  assert.equal(checks, 1);
+  assert.equal(downloads.length, 2);
+  const index = path.join(f.jobs.root, ".reference-cache", referenceCacheKey(initial.treeBase), "microbe.sqlite");
+  const before = await stat(index);
+  const second = await f.create();
+  assert.equal((await f.run(second.id)).status, "complete");
+  assert.equal(checks, 2);
+  assert.equal(downloads.length, 2);
+  assert.equal((await stat(index)).mtimeMs, before.mtimeMs);
+  const moreDomains = await f.create({ domains: ["microbe", "plant"] });
+  assert.equal((await f.run(moreDomains.id)).status, "complete");
+  assert.equal(downloads.length, 4);
+  sha = "b".repeat(40);
+  const third = await f.create();
+  const changed = await f.run(third.id);
+  assert.equal(changed.status, "complete");
+  assert.equal(changed.referenceVersion, sha);
+  assert.equal(downloads.length, 6);
+  assert.equal(checks, 4);
+  // Reload from disk and resume the original pinned job after upstream changes.
+  const restored = new Jobs(f.jobs.root, f.config);
+  await restored.init();
+  const old = restored.get(first.id);
+  old.status = "paused";
+  await restored.start(first.id);
+  await restored.active.get(first.id)?.promise;
+  assert.equal(old.status, "complete");
+  assert.equal(old.referenceVersion, "a".repeat(40));
+  assert.equal(checks, 4);
+  assert.equal(downloads.length, 6);
+  assert.equal((await stat(index)).mtimeMs, before.mtimeMs);
+  // A pre-cache job retains its local references and does not resolve a version.
+  const legacy = await f.create();
+  delete f.jobs.get(legacy.id).referenceCacheVersion;
+  assert.equal((await f.run(legacy.id)).status, "complete");
+  assert.equal(checks, 4);
+  await stat(path.join(f.jobs.dir(legacy.id), "reference", "microbe.sqlite"));
 });

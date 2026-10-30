@@ -131,27 +131,37 @@ Nothing under upstream `data/` is bundled. The default source is:
 https://raw.githubusercontent.com/robinschmid/microbe_masst/master/data/
 ```
 
-Each job downloads only selected `*_masst_tree.json` and `*_masst_table.csv` files
-(`microbiome` uses TSV), directly from `robinschmid/microbe_masst`. The default
-follows the latest files on its `master` branch at download time. The selected
-source URL is saved in `job.json`. References are cached and indexed with SQLite
-**once per job**, so later spectra do indexed joins instead of rescanning large
-CSVs. The first run therefore takes longer.
+When a new job first starts, the app checks GitHub for the latest commit affecting
+`data/` on `master` and saves that commit in the job. All tree and metadata files
+for the job are downloaded from that immutable commit, keeping them consistent.
+Job parameters display the pinned reference version and are collapsed by default.
 
-Set `TREE_BASE_URL` to a raw data URL ending in `/` to override the source. For
-reproducible downloads, replace `master` with a specific commit SHA; the live
-branch can change between file downloads. Existing jobs retain their saved source
-and cached files. Create a new job to use the updated default.
+References and SQLite indexes are shared across jobs in
+`var/jobs/.reference-cache/`, keyed by the pinned source URL and index schema
+version. If the data version is unchanged, new jobs reuse the files and indexes.
+Only selected domains are downloaded (`*_masst_tree.json` and
+`*_masst_table.csv`; `microbiome` uses TSV). A different data commit gets a separate
+cache; adding a domain downloads only that domain's missing files. Resumed jobs
+keep their original version, even if upstream has changed. Old cache versions are
+retained for those jobs.
+
+Set `TREE_BASE_URL` to a raw data URL ending in `/` to override the source. GitHub
+raw URLs using a full commit SHA skip the version check. Other custom hosts and
+jobs created before shared caching retain per-job caches. If GitHub's version
+check fails or is rate-limited, the job reports the error and can be resumed to
+retry; it does not silently select stale data. Already pinned jobs do not need
+another version check.
 
 ## Durable storage and recovery
 
 Default storage is `batchmasst-desk/var/`, ignored by Git:
 
 ```text
+var/jobs/.reference-cache/   # shared immutable references and SQLite indexes
 var/jobs/<uuid>/
   job.json                    # atomic manifest: parameters, inputs, task IDs, status
   input                       # original upload
-  reference/                  # downloaded trees/tables and their SQLite indexes
+  reference/                  # legacy/custom-source per-job references
   000001/
     input.json                # normalized query
     data.json                 # complete, validated FASST response

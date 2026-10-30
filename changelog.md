@@ -11,6 +11,8 @@ Planned version: **1.1.0**.
 
 ### Changed
 
+- Job parameters are collapsed by default.
+
 - New jobs retrieve domain trees and metadata from the latest `master` branch of
   `robinschmid/microbe_masst`, replacing the pinned commit from
   `wilhan-nunes/microbe_masst`. Existing jobs retain their saved source and cached
@@ -19,6 +21,11 @@ Planned version: **1.1.0**.
 - Updated the README to explain the live upstream source and reference caching.
 
 ### Added
+
+- Shared, versioned reference cache for trees, metadata, and SQLite indexes. New
+  jobs resolve the latest upstream data commit and reuse its cache; resumed jobs
+  retain their pinned version. Missing domains are downloaded on demand, while
+  older jobs and custom non-GitHub sources retain per-job caching.
 
 - Job inspection banner for FASST connection failures, server errors, and rate
   limits. Shows when result requests are retrying, clears recovered warnings,

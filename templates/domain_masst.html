@@ -613,7 +613,7 @@
         <p id="fasst-warning" role="status" aria-live="polite"
           style="padding: 12px; border-radius: 8px; background: #fff5e1; color: var(--warn)" hidden></p>
         <p id="job-eta" role="status" hidden></p>
-        <details open style="margin-bottom: 16px">
+        <details style="margin-bottom: 16px">
           <summary>Job parameters</summary>
           <table><tbody id="job-parameters"></tbody></table>
         </details>
@@ -990,6 +990,7 @@
                 ["Analog window", p.analog ? "−" + p.below + " / +" + p.above + " Da" : "Not used"],
                 ["Number of workers", p.concurrency],
                 ["Domains", p.domains.join(", ") || "None"],
+                ["Reference version", j.referenceVersion || "Per-job source (not versioned)"],
                 ["Exports", ["TSV", p.exportHtml && "HTML trees", p.exportJson && "Tree JSON"].filter(Boolean).join(", ")],
                 ["USI column", p.usiColumn],
                 ["Name column", p.nameColumn || "Automatic"],
