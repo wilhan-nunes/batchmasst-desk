@@ -122,21 +122,20 @@ it consumes their published outputs directly, as requested.
 Nothing under upstream `data/` is bundled. The default source is:
 
 ```text
-https://raw.githubusercontent.com/wilhan-nunes/microbe_masst/d9d797e936c630c656fed65e8ec50b4f99d3d59c/data/
+https://raw.githubusercontent.com/robinschmid/microbe_masst/master/data/
 ```
 
 Each job downloads only selected `*_masst_tree.json` and `*_masst_table.csv` files
-(`microbiome` uses TSV), directly from the original repository. A fixed commit
-keeps tree/metadata pairs and resumed jobs reproducible. The selected source URL
-is saved in `job.json`. References are cached and indexed with SQLite **once per
-job**, so later spectra do indexed joins instead of rescanning large CSVs. All six
-domains currently require roughly 106 MB of reference downloads, plus indexes and
-outputs. The first run therefore takes longer.
+(`microbiome` uses TSV), directly from `robinschmid/microbe_masst`. The default
+follows the latest files on its `master` branch at download time. The selected
+source URL is saved in `job.json`. References are cached and indexed with SQLite
+**once per job**, so later spectra do indexed joins instead of rescanning large
+CSVs. The first run therefore takes longer.
 
-Set `TREE_BASE_URL` to the repository's `fasst_api/data/` raw URL to follow the
-branch for new jobs, or another commit URL to update deliberately. Include a
-trailing slash. Existing jobs retain their source and cached files. Changing
-references in an existing job is not supported; create a new job for new references.
+Set `TREE_BASE_URL` to a raw data URL ending in `/` to override the source. For
+reproducible downloads, replace `master` with a specific commit SHA; the live
+branch can change between file downloads. Existing jobs retain their saved source
+and cached files. Create a new job to use the updated default.
 
 ## Durable storage and recovery
 
@@ -198,7 +197,7 @@ after verifying the original server is stopped.
 | `HOST` | `127.0.0.1` | Listening address |
 | `DATA_DIR` | `<app-folder>/var` | Persistent storage location |
 | `FASST_API_URL` | `https://api.fasst.gnps2.org/` | Server-side search API; saved per job |
-| `TREE_BASE_URL` | Pinned upstream raw data URL above | Source for new jobs |
+| `TREE_BASE_URL` | Latest upstream `master/data/` raw URL above | Source for new jobs |
 | `MAX_UPLOAD_BYTES` | `2147483648` | Upload size limit (2 GiB) |
 
 macOS/Linux:
